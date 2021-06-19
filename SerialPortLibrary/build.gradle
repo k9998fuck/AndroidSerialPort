@@ -18,6 +18,9 @@ android {
                 arguments '-DANDROID_TOOLCHAIN=clang'
             }
         }
+        ndk {
+            abiFilters 'armeabi'
+        }
     }
 
     buildTypes {

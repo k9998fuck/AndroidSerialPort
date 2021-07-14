@@ -14,6 +14,8 @@ public abstract class SerialPortReadThread extends Thread {
 
     public abstract void onDataReceived(byte[] bytes);
 
+    public abstract void onError(Exception e);
+
     private static final String TAG = SerialPortReadThread.class.getSimpleName();
     private InputStream mInputStream;
     private byte[] mReadBuffer;
@@ -49,6 +51,11 @@ public abstract class SerialPortReadThread extends Thread {
 
             } catch (IOException e) {
                 e.printStackTrace();
+                try {
+                    onError(e);
+                } catch (Exception e2) {
+                    e2.printStackTrace();
+                }
                 return;
             }
         }

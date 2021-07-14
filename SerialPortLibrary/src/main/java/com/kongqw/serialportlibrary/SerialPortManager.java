@@ -158,6 +158,13 @@ public class SerialPortManager extends SerialPort {
                         }
                     } catch (IOException e) {
                         e.printStackTrace();
+                        try {
+                            if (null != mOnSerialPortDataListener) {
+                                mOnSerialPortDataListener.onError(e);
+                            }
+                        } catch (Exception e2) {
+                            e2.printStackTrace();
+                        }
                     }
                 }
             }
@@ -185,6 +192,13 @@ public class SerialPortManager extends SerialPort {
             public void onDataReceived(byte[] bytes) {
                 if (null != mOnSerialPortDataListener) {
                     mOnSerialPortDataListener.onDataReceived(bytes);
+                }
+            }
+
+            @Override
+            public void onError(Exception e) {
+                if (null != mOnSerialPortDataListener) {
+                    mOnSerialPortDataListener.onError(e);
                 }
             }
         };

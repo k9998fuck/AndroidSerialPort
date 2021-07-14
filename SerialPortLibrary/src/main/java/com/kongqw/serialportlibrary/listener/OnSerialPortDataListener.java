@@ -20,4 +20,11 @@ public interface OnSerialPortDataListener {
      * @param bytes 发送的数据
      */
     void onDataSent(byte[] bytes);
+
+    /**
+     * 发生错误
+     * @param e 具体异常
+     */
+    void onError(Exception e);
+
 }

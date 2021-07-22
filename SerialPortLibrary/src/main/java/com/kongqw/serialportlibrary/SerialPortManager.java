@@ -14,24 +14,120 @@ import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 /**
  * Created by Kongqw on 2017/11/13.
  * SerialPortManager
  */
 
-public class SerialPortManager extends SerialPort {
+public class SerialPortManager {
 
     private static final String TAG = SerialPortManager.class.getSimpleName();
-    private FileInputStream mFileInputStream;
-    private FileOutputStream mFileOutputStream;
-    private FileDescriptor mFd;
+    private InputStream mFileInputStream;
+    private OutputStream mFileOutputStream;
     private OnOpenSerialPortListener mOnOpenSerialPortListener;
     private OnSerialPortDataListener mOnSerialPortDataListener;
 
     private HandlerThread mSendingHandlerThread;
     private Handler mSendingHandler;
     private SerialPortReadThread mSerialPortReadThread;
+
+    private ISerialPort serialPort;
+
+    public SerialPortManager() {
+        this.serialPort = new ISerialPort() {
+
+            final SerialPort serialPort = new SerialPort();
+            FileDescriptor fileDescriptor = null;
+            InputStream inputStream = null;
+            OutputStream outputStream = null;
+
+            @Override
+            public boolean open(String path, int baudRate, int flags) {
+                fileDescriptor = serialPort.open2(path, baudRate, flags);
+                return true;
+            }
+
+            @Override
+            public InputStream getInputStream() throws IOException {
+                if (fileDescriptor == null) {
+                    throw new IOException("Serial port is not initialized");
+                }
+                if (inputStream == null) {
+                    inputStream = new FileInputStream(fileDescriptor);
+                }
+                return inputStream;
+            }
+
+            @Override
+            public OutputStream getOutputStream() throws IOException {
+                if (fileDescriptor == null) {
+                    throw new IOException("Serial port is not initialized");
+                }
+                if (outputStream == null) {
+                    outputStream = new FileOutputStream(fileDescriptor);
+                }
+                return outputStream;
+            }
+
+            @Override
+            public void close() {
+                if (fileDescriptor != null) {
+                    fileDescriptor = null;
+                    serialPort.close2();
+                }
+                if (inputStream != null) {
+                    try {
+                        inputStream.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                    inputStream = null;
+                }
+                if (outputStream != null) {
+                    try {
+                        outputStream.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                    outputStream = null;
+                }
+            }
+        };
+    }
+
+    public SerialPortManager(ISerialPort serialPort) {
+        this.serialPort = serialPort;
+    }
+
+    /**
+     * 文件设置最高权限 777 可读 可写 可执行
+     *
+     * @param file 文件
+     * @return 权限修改是否成功
+     */
+    private boolean chmod777(File file) {
+        if (null == file || !file.exists()) {
+            // 文件不存在
+            return false;
+        }
+        try {
+            // 获取ROOT权限
+            Process su = Runtime.getRuntime().exec("/system/bin/su");
+            // 修改文件属性为 [可读 可写 可执行]
+            String cmd = "chmod 777 " + file.getAbsolutePath() + "\n" + "exit\n";
+            su.getOutputStream().write(cmd.getBytes());
+            if (0 == su.waitFor() && file.canRead() && file.canWrite() && file.canExecute()) {
+                return true;
+            }
+        } catch (IOException | InterruptedException e) {
+            // 没有ROOT权限
+            e.printStackTrace();
+        }
+        return false;
+    }
 
     /**
      * 打开串口
@@ -41,7 +137,6 @@ public class SerialPortManager extends SerialPort {
      * @return 打开是否成功
      */
     public boolean openSerialPort(File device, int baudRate) {
-
         Log.i(TAG, "openSerialPort: " + String.format("打开串口 %s  波特率 %s", device.getPath(), baudRate));
 
         // 校验串口权限
@@ -57,10 +152,11 @@ public class SerialPortManager extends SerialPort {
         }
 
         try {
-            mFd = open(device.getAbsolutePath(), baudRate, 0);
-            mFileInputStream = new FileInputStream(mFd);
-            mFileOutputStream = new FileOutputStream(mFd);
-            Log.i(TAG, "openSerialPort: 串口已经打开 " + mFd);
+            closeSerialPort();
+            serialPort.open(device.getAbsolutePath(), baudRate, 0);
+            mFileInputStream = serialPort.getInputStream();
+            mFileOutputStream = serialPort.getOutputStream();
+            Log.i(TAG, "openSerialPort: 串口已经打开");
             if (null != mOnOpenSerialPortListener) {
                 mOnOpenSerialPortListener.onSuccess(device);
             }
@@ -74,6 +170,7 @@ public class SerialPortManager extends SerialPort {
             if (null != mOnOpenSerialPortListener) {
                 mOnOpenSerialPortListener.onFail(device, OnOpenSerialPortListener.Status.OPEN_FAIL);
             }
+            closeSerialPort();
         }
         return false;
     }
@@ -82,11 +179,7 @@ public class SerialPortManager extends SerialPort {
      * 关闭串口
      */
     public void closeSerialPort() {
-
-        if (null != mFd) {
-            close();
-            mFd = null;
-        }
+        serialPort.close();
         // 停止发送消息的线程
         stopSendThread();
         // 停止接收消息的线程
@@ -110,9 +203,6 @@ public class SerialPortManager extends SerialPort {
             mFileOutputStream = null;
         }
 
-        mOnOpenSerialPortListener = null;
-
-        mOnSerialPortDataListener = null;
     }
 
     /**
@@ -221,7 +311,7 @@ public class SerialPortManager extends SerialPort {
      * @return 发送是否成功
      */
     public boolean sendBytes(byte[] sendBytes) {
-        if (null != mFd && null != mFileInputStream && null != mFileOutputStream) {
+        if (null != mFileInputStream && null != mFileOutputStream) {
             if (null != mSendingHandler) {
                 Message message = Message.obtain();
                 message.obj = sendBytes;

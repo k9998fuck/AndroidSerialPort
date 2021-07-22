@@ -70,8 +70,6 @@ public abstract class SerialPortReadThread extends Thread {
      * 关闭线程 释放资源
      */
     public void release() {
-        interrupt();
-
         if (null != mInputStream) {
             try {
                 mInputStream.close();
@@ -80,6 +78,6 @@ public abstract class SerialPortReadThread extends Thread {
                 e.printStackTrace();
             }
         }
-
+        interrupt();
     }
 }
